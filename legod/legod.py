@@ -1,5 +1,3 @@
-
-
 ###############
 # @Author: 6yy66yy
 # @Date: 2021-07-26 16:44:05
@@ -13,6 +11,7 @@ import json
 import os
 import time
 import hashlib #md5 加密
+from typing import Union
 
 class legod(object):
     def __init__(self):
@@ -52,7 +51,7 @@ class legod(object):
                 *************************************************** '''%self.version)
     
     # 加载配置
-    def load(self):
+    def load(self) -> tuple:
         '''
         加载配置文件
 
@@ -118,7 +117,7 @@ class legod(object):
             return True,token
         else:
             print(msg['msg'])
-            self.send_webhook(msg['msg'])
+            self.push(msg['msg'])
             raise Exception('请检查登录信息！')
             return False,msg['msg']
     
@@ -129,7 +128,7 @@ class legod(object):
         return self.conf["account_token"]
 
     # 获取用户信息
-    def get_account_info(self,status = 2) -> tuple:
+    def get_account_info(self,status : int = 2) -> tuple:
         '''
         获取账号信息
         Returns
@@ -170,7 +169,7 @@ class legod(object):
             return False
         
     # 暂停时长
-    def pause(self,status = 3):
+    def pause(self,status : int = 3) -> Union[bool, str]:
         '''
         暂停加速,调用官网api
 
@@ -191,26 +190,35 @@ class legod(object):
         data = json.loads(result.text)
         if result.status_code==403:
             print("未知错误，可能是请求频繁或者是网址更新, 将在10分钟后重试尝试")
-            self.send_webhook("未知错误，可能是请求频繁或者是网址更新, 将在10分钟后重试尝试")
+            self.push("未知错误，可能是请求频繁或者是网址更新, 将在10分钟后重试尝试")
             self.login()
             return self.pause(status - 1)
-        self.send_webhook("暂停" + data['msg'])
+        self.push("暂停" + data['msg'])
         return data['msg']
 
     # webhook推送, 目前只做了bark推送, 详情@ https://github.com/Finb/Bark
-    def send_webhook(self,message):
+    def push(self,message : str) -> bool:
         url = self.conf['webhook']
         if len(url) == 0:
             return False
         
-        headers = {'Content-Type': 'application/json'}
-        if url[-1]  == '/':
+        if "api.day.app" in url:
+            headers = {'Content-Type': 'application/json'}
+            if url[-1]  == '/':
+                url = url + message
+            else:
+                url = url + '/' + message
+            response = requests.post(url = url, data = json.dumps(), headers = headers)
+            if response.status_code == 200:
+                print("Webhook sent successfully")
+            else:
+                print(f"Failed to send webhook. Error: {response.text}")
+            return True
+        elif "api.telegram.org" in url:
             url = url + message
-        else:
-            url = url + '/' + message
-        response = requests.post(url = url, data = json.dumps(), headers = headers)
-        if response.status_code == 200:
-            print("Webhook sent successfully")
-        else:
-            print(f"Failed to send webhook. Error: {response.text}")
-        return True
+            response = requests.get(url = url)
+            if response.status_code == 200:
+                print("Webhook sent successfully")
+            else:
+                print(f"Failed to send webhook. Error: {response.text}")
+            
