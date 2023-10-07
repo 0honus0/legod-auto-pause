@@ -30,7 +30,7 @@ jobs:
         password: ${{ secrets.DOCKER_PASSWORD }}
       
     # Runs a single command using the runners shell
-    - name: Build and push Docker images to docker.io and ghcr.io
+    - name: Build and push Docker images to docker.io
       uses: docker/build-push-action@v2
       with:
         file: 'Dockerfile'
@@ -38,7 +38,7 @@ jobs:
         context: ./
         push: true
         tags: |
-          ${{ secrets.DOCKER_USERNAME }}/efb-wechat-comwechat-slave:latest
+          ${{ secrets.DOCKER_USERNAME }}/legod-auto-pause:latest
 
     - name: Docker Hub Description
       uses: peter-evans/dockerhub-description@v3
