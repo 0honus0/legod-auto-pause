@@ -300,6 +300,10 @@ configfile = "config.ini" if not isDebug else "config-dev.ini"
 # logging.basicConfig(filename='log.log')
 
 if __name__ == "__main__":
-    t = legod(True)
-    t.login(t.uname,t.password)
-    t.pause()
+    while True:
+        import time
+        time.sleep(1800)
+        
+        t = legod(True)
+        t.login(t.uname,t.password)
+        t.pause()
