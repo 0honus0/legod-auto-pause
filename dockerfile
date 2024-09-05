@@ -10,4 +10,4 @@ ENV WEBHOOK=
 ENV SLEEP=3600
 ENV ACCOUNT_TOKEN=
 RUN pip install schedule requests
-CMD ["python", "main.py"]
+CMD ["python", "legod.py"]

@@ -2,223 +2,304 @@
 # @Author: 6yy66yy
 # @Date: 2021-07-26 16:44:05
 # @LastEditors: 6yy66yy
-# @LastEditTime: 2023-03-05 19:35:49
+# @LastEditTime: 2024-08-17 17:32:48
 # @FilePath: \legod-auto-pause\legod.py
 # @Description: 雷神加速器时长自动暂停，暂停程序，可以独立运行。
 ###############
+from concurrent.futures import ThreadPoolExecutor
 import requests
 import json
 import os
+import configparser
+
+# from hyper.contrib import HTTP20Adapter
 import time
-import hashlib #md5 加密
-from typing import Union
+
+# import logging #log记录组件，目前没啥用
+import hashlib  # md5 加密
+from sys import gettrace
+import sys
+from urllib.parse import urlencode
+
+# 雷神返回值定义
+# HTTP_SUCCESS_NET_CODE: 0,
+# HTTP_TOKEN_EXPIRE: 400006,
+# HTTP_LOGIN_ERROR_CODE: 400003,
+# HTTP_ERROR_NEW_CODE: -5e4,
+# HTTP_ERROR_NOT_PAY: 400877,
+# HTTP_ERROR_WX_NOBIND: 400617,
+# HTTP_ERROR_JYCODE: 400857
 
 class legod(object):
-    def __init__(self):
-        self.version = "v2.2.1-docker"
-        self.pause_url='https://webapi.leigod.com/api/user/pause'
-        self.info_url = 'https://webapi.leigod.com/api/user/info'
-        self.login_url = 'https://webapi.leigod.com/api/auth/login'
+    def __init__(self, first, filedir="None"):
+        self.version = "v2.2.3"
+        self.pause_url = "https://webapi.leigod.com/api/user/pause"
+        self.info_url = "https://webapi.leigod.com/api/user/info"
+        self.key = "5C5A639C20665313622F51E93E3F2783"
         self.header = {
-                # ':authority': 'webapi.nn.com',
-                # ':method':'POST',
-                # ':path':'/api/user/pause',
-                # ':scheme': 'https',
-                'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.96 Safari/537.36 Edg/88.0.705.53',
-                'Content-Type': "application/x-www-form-urlencoded; charset=UTF-8",
-                'Connection':"keep-alive",
-                'Accept': "application/json, text/javascript, */*; q=0.01",
-                'Accept-Encoding': "gzip, deflate, br",
-                'Accept-Language': "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
-                'DNT': "1",
-                'Referer': 'https://www.legod.com/',
-                'Sec-Fetch-Dest': 'empty',
-                'Sec-Fetch-Mode': 'cors',
-                'Sec-Fetch-Site': 'same-site'
-                        }
-        self.stopp=False
-        self.conf=self.load()
-        print('''
-                ***************************************************
-                *                                                 *
-                *                                                 *
-                *              雷神加速器自动暂停工具-DOCKER版本   *
-                *                  当前版本：%s         *
-                *                   作者: QuietBlade               *
-                *                   感谢: 6yy66yy                  *
-                *                                                 *
-                *                                                 *
-                *************************************************** '''%self.version)
-    
-    # 加载配置
-    def load(self) -> tuple:
-        '''
+            # ':authority': 'webapi.nn.com',
+            # ':method':'POST',
+            # ':path':'/api/user/pause',
+            # ':scheme': 'https',
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.96 Safari/537.36 Edg/88.0.705.53",
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "Connection": "keep-alive",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
+            "DNT": "1",
+            "Referer": "https://www.legod.com/",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-site",
+        }
+        self.Dir = filedir
+        self.stopp = False
+        self.conf = self.load()
+        print(
+            """ 当前版本：%s"""
+            % self.version
+        )
+    # 对密码生成md5进行判断
+    def encrypt_password_in_config(self, password):
+        """
+        创建md5对象
+        """
+        password = self.generate_md5(password)
+        return password
+
+    def generate_md5(self, str):
+        hl = hashlib.md5()
+        # Tips
+        # 此处必须声明encode
+        # 否则报错为：hl.update(str)    Unicode-objects must be encoded before hashing
+        hl.update(str.encode(encoding="utf-8"))
+        return hl.hexdigest()
+
+    def login(self, uname, password):
+        """
+        登录函数，当token无效的时候调用登录函数获取新的token
+
+        Return:
+            成功:True+新的token
+            失败:False+错误信息
+        """
+        if uname == "" or password == "":
+            return False
+        token = ""
+        # body={
+        #     'username':uname,
+        #     'password':self.genearteMD5(password),
+        #     'user_type':'0',
+        #     'src_channel':'guanwang',
+        #     'country_code':86,
+        #     'lang':'zh_CN',
+        #     'region_code':1,
+        #     'account_token':'null'}
+        body = {
+            "account_token": "null",
+            "country_code": 86,
+            "lang": "zh_CN",
+            "mobile_num": uname,
+            "os_type": 4,
+            "password": self.encrypt_password_in_config(password),
+            "region_code": 1,
+            "src_channel": "guanwang",
+            "username": uname,
+        }
+        # 对请求体做签名
+        self.legod_sign(body)
+
+        r = requests.post(
+            "https://webapi.leigod.com/api/auth/login/v1",
+            data=body,
+            headers=self.header,
+        )
+        msg = json.loads(r.text)
+        if msg["code"] == 0:
+            token = msg["data"]["login_info"]["account_token"]
+            print("登陆成功，token:" + token)
+            self.conf.set("config", "account_token", token)
+            self.conf.write(open(self.configPath, "w", encoding="utf_8"))
+            print("已写入新的token")
+            return True, token
+        else:
+            print(msg["msg"])
+            return False, msg["msg"]
+
+    def legod_sign(self, bodyToSign):
+        """
+        官方的“签名方法” 实际是对请求体转字符串后做了一个md5（流汗
+        """
+        bodyToSign["ts"] = int(time.time())
+        str_to_sign = urlencode(sorted(bodyToSign.items())) + '&key=' + self.key
+        print("sign:" + str_to_sign)
+        bodyToSign["sign"] = self.generate_md5(str_to_sign)
+
+    def get_token(self, payload) -> tuple:
+        """获取并写入token到config.ini
+        Returns
+        --------
+        :class:`bool`
+           True 登录成功 False  登录失败
+        :class:`str`
+            登录成功返回成功msg，登录失败返回错误msg
+        """
+        tmp_msg = ""
+        result = self.login(self.uname, self.password)
+        token = result[1]
+        if result[0]:
+            self.conf.set("config", "account_token", token)
+            self.conf.write(open(self.configPath, "w", encoding="utf_8"))
+            print("原token失效,已写入新的token")
+            tmp_msg = "原token失效,已写入新的token"
+            payload["account_token"] = token
+            return True, tmp_msg
+        else:
+            tmp_msg = token
+            return False, tmp_msg
+
+    def get_account_info(self) -> tuple:
+        """
+        获取账号信息
+        Returns
+        --------
+        :class:`tuple`
+            (True,账号信息) or (False,错误信息)
+        """
+        payload = {
+            "account_token": self.conf.get("config", "account_token"),
+            "lang": "zh_CN",
+            "os_type": 4,
+        }
+        for i in range(2):
+            r = requests.post(self.info_url, data=payload, headers=self.header)
+            msg = json.loads(r.text)
+            # code:400006  msg: '账号未登录'说明token失效，需要重新登录获取token
+            if msg["code"] == 400006:
+                result = self.get_token(payload)
+            elif msg["code"] == 0:
+                return True, msg["data"]
+                break
+            else:
+                return False, msg["msg"]
+                break
+
+    def check_stop_status(self) -> bool:
+        """
+        通过账号信息判断是否暂停
+        0:正常,1:暂停
+        """
+        status = self.get_account_info()[1]["pause_status_id"]
+        if status == 1:
+            return True
+        else:
+            return False
+
+    def pause(self):
+        """
+        暂停加速,调用官网api
+
+        Returns:
+            官网返回的信息
+        """
+        # sessions=requests.session()
+        # sessions.mount('https://webapi.nn.com', HTTP20Adapter())
+        # r =sessions.post(url,data=payload,headers = header)
+        i = 0
+        token = ""
+        tmp_msg = ""
+        while i < 3:
+            i += 1
+            if (
+                self.uname == ""
+                or self.password == ""
+                and self.conf.get("config", "account_token") == ""
+            ):
+                print("没填用户名密码或者是token无效,请填写后再试")
+                tmp_msg = "没填用户名密码或者是token无效,请填写再试"
+                break
+            # 检查是否暂停，如果暂停则不再暂停
+            if self.check_stop_status():
+                tmp_msg = "已经暂停"
+                print(tmp_msg)
+                break
+            # 请求暂停
+            payload = {
+                "account_token": self.conf.get("config", "account_token"),
+                "lang": "zh_CN",
+                "os_type": 4,
+            }
+            response = requests.post(self.pause_url, data=payload, headers=self.header)
+            if response.status_code == 403:
+                try:
+                    token = self.login(self.uname, self.password)
+                except:
+                    print("未知错误，可能是请求频繁或者是网址更新")
+                    tmp_msg = "未知错误，可能是请求频繁或者是网址更新"
+                continue
+            msg = json.loads(response.text)
+            print("暂停结果：", msg["msg"])
+            if msg["code"] != 400006:
+                tmp_msg = msg["msg"]
+                return tmp_msg
+            else:
+                result = self.get_token(payload)
+                result, tmp_msg = result[0], result[1]
+                # 获取token失败直接退出
+                if not result:
+                    break
+        return tmp_msg
+
+    def load(self):
+        """
         加载配置文件
 
             文件名:configfile(在文件头定义,默认为config.ini)
 
         Returns:
             conf元组
-        '''
-        
-        self.conf = {
-            "uname": os.environ.get('UNAME', ''),        # 用户名/手机号
-            "password": os.environ.get('PASSWD', ''),    # 密码(支持明文和md5)
-            "account_token": os.environ.get('ACCOUNT_TOKEN', ''), # 用户的token
-            "webhook" : os.environ.get('WEBHOOK', '') # webhook 路径, 目前支持 bark
-        }
-        # print(self.conf)
-        return self.conf
-
-    # 工具类 md5加密
-    def genearteMD5(self,password):
-        '''
-        创建md5对象
-        '''
-        # 已经md5加密过的密码
-        if len(self.conf['password']) == 32:
-            # print("密码已加密,无需再次加密")
-            return password
-        hl = hashlib.md5()
-        hl.update(password.encode(encoding='utf-8'))
-        password = hl.hexdigest()
-        self.conf['password'] = password
-        return password
-
-    # 登录
-    def login(self):
-        '''
-        登录函数，当token无效的时候调用登录函数获取新的token
-
-        Return:
-            成功:True+新的token
-            失败:False+错误信息
-        '''
-        uname = self.conf['uname']
-        password = self.conf['password']
-        if(uname=="" or password==""):
-            return False
-        token=""
-        body={
-            'username':uname,
-            'password':self.genearteMD5(password),
-            'user_type':'0',
-            'src_channel':'guanwang',
-            'country_code':86,
-            'lang':'zh_CN',
-            'region_code':1,
-            'account_token':'null'
-        }
-        r = requests.post(self.login_url,data=body,headers = self.header)
-        msg=json.loads(r.text)
-        if(msg['code']==0):
-            token = msg['data']['login_info']['account_token']
-            self.conf['account_token'] = token
-            return True,token
+        """
+        # 当前文件路径
+        if __name__ == "__main__":
+            proDir = os.path.dirname(sys.argv[0])
+        elif self.Dir != "None":
+            proDir = self.Dir
         else:
-            print(msg['msg'])
-            self.push(msg['msg'])
-            raise Exception('请检查登录信息！')
-            return False,msg['msg']
-    
-    #获取用户token
-    def get_token(self) -> tuple:
-        if len(self.conf["account_token"]) == 0:
-            self.login()
-        return self.conf["account_token"]
+            e = Exception("调用此函数需要导入主函数所在路径")
+            raise e
+        # global uname,password,account_token,configPath,conf # 大概没用注释一下
+        if isDebug:  # 在当前文件路径下查找.ini文件
+            # print("debug模式开启,密码不加密传输")
+            print("debug模式开启")
+            print("当前加载配置为" + configfile)
+        self.configPath = os.path.join(proDir, configfile)
+        self.conf = configparser.ConfigParser()
 
-    # 获取用户信息
-    def get_account_info(self,status : int = 2) -> tuple:
-        '''
-        获取账号信息
-        Returns
-        --------
-        :class:`tuple`
-            (True,账号信息) or (False,错误信息)
-        '''
-        if status == 0:
-            return False, '用户名或密码错误导致无法获取账号信息'
+        # 读取.ini文件
+        self.conf.read(self.configPath, encoding="UTF-8-sig")
+        # 捕获异常并打印错误信息
+        try:
+            self.uname = os.environ["UNAME"]  # 用户名/手机号
+            self.password = os.environ["PASSWD"]  # 密码
+            self.md5 = self.conf.get("config", "md5")  # 密码是否已经md5加密 
+            account_token = self.conf.get("config", "account_token")
+            return self.conf
+        except Exception as e:
+            print("文件加载地址为" + self.configPath)
+            print("配置文件加载失败,请检查配置文件是否正确")
+            print("ERROR:" + e)
 
-        payload = {
-            "account_token": self.get_token(),
-            "lang":"zh_CN"
-        }
-        result = requests.post(self.info_url,data=payload,headers = self.header)
-        msg = json.loads(result.text)
-        # token 失效, 就再试一次
-        if msg['code'] == 400006:
-            self.conf['account_token'] = ''
-            print('token失效, 将在1分钟后重新尝试')
-            time.sleep(60)
-            return self.get_account_info(status - 1)
-        elif msg['code'] == 0:
-            return True,msg['data']
-        else:
-            return False,msg['msg']
-    
-    # 检查当前状态
-    def check_stop_status(self) -> bool:
-        '''
-        通过账号信息判断是否暂停
-        0:正常,1:暂停
-        '''
-        status=self.get_account_info()[1]['pause_status_id']
-        if(status == 1):
-            return True
-        else:
-            return False
-        
-    # 暂停时长
-    def pause(self,status : int = 3) -> Union[bool, str]:
-        '''
-        暂停加速,调用官网api
+# 常量定义区
+## 是否为debug模式
+isDebug = True if gettrace() else False
+## 配置config文件名
+configfile = "config.ini" if not isDebug else "config-dev.ini"
 
-        Returns:
-            官网返回的信息
-        '''
-        # sessions=requests.session()
-        # sessions.mount('https://webapi.nn.com', HTTP20Adapter())
-        # r =sessions.post(url,data=payload,headers = header)
-        if self.check_stop_status():
-            print("已处于暂停状态")
-            return False
-        payload = {
-            "account_token" : self.conf['account_token'],
-            "lang" : "zh_CN"
-            }
-        result = requests.post(self.pause_url,data=payload,headers = self.header)
-        data = json.loads(result.text)
-        if result.status_code==403:
-            print("未知错误，可能是请求频繁或者是网址更新, 将在10分钟后重试尝试")
-            self.push("未知错误，可能是请求频繁或者是网址更新, 将在10分钟后重试尝试")
-            self.login()
-            return self.pause(status - 1)
-        self.push("暂停" + data['msg'])
-        return data['msg']
+## 配置日志
+# logging.basicConfig(filename='log.log')
 
-    # webhook推送, 目前只做了bark推送, 详情@ https://github.com/Finb/Bark
-    def push(self,message : str) -> bool:
-        url = self.conf['webhook']
-        if len(url) == 0:
-            return False
-        
-        if "api.day.app" in url:
-            headers = {'Content-Type': 'application/json'}
-            if url[-1]  == '/':
-                url = url + message
-            else:
-                url = url + '/' + message
-            response = requests.post(url = url, data = json.dumps(), headers = headers)
-            if response.status_code == 200:
-                print("Webhook sent successfully")
-            else:
-                print(f"Failed to send webhook. Error: {response.text}")
-            return True
-        elif "api.telegram.org" in url:
-            url = url + message
-            response = requests.get(url = url)
-            if response.status_code == 200:
-                print("Webhook sent successfully")
-            else:
-                print(f"Failed to send webhook. Error: {response.text}")
-            
+if __name__ == "__main__":
+    t = legod(True)
+    t.login(t.uname,t.password)
+    t.pause()
